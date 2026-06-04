@@ -24,8 +24,8 @@ int main() {
     std::cout<<"Please enter the longitude for your location =>";
     std::cin>>longitude;
     
-    std::string lat=std::tostring(latitude);
-    std::string longi=std::tostring(longitude);
+    std::string lat=std::to_string(latitude);
+    std::string longi=std::to_string(longitude);
     
     curl = curl_easy_init();
     if (!curl) {
