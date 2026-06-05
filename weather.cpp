@@ -1,6 +1,6 @@
 #include <iostream>
 #include <string>
-#include <curl/curl.h>
+#include "curl/curl.h"
 #include "nlohmann/json.hpp"
 
 using json = nlohmann::json;
@@ -14,27 +14,27 @@ size_t WriteCallback(void* contents, size_t size, size_t nmemb, std::string* out
 int main() {
     CURL* curl;
     CURLcode res;
-    std::string response,
+    std::string response;
     
-    double latitude,
-           longitude;
+    double lat,
+           longi;
 
-    std::cout<<"Please enter the latitude for your location";
-    std::cin>>latitude;
-    std::cout<<"Please enter the longitude for your location =>";
-    std::cin>>longitude;
+    std::cout<<"Please enter the latitude for your location => ";
+    std::cin>>lat;
+    std::cout<<"Please enter the longitude for your location => ";
+    std::cin>>longi;
     
-    std::string lat=std::to_string(latitude);
-    std::string longi=std::to_string(longitude);
+    std::string lat=std::to_string(lat);
+    std::string longi=std::to_string(longi);
     
     curl = curl_easy_init();
     if (!curl) {
         std::cerr << "Failed to initialize curl" << std::endl;
         return 1;
     }
-
+    //https://api.openweathermap.org/data/2.5/weather?lat=2.094&lon=102.65&appid=f88e5e3d6507f132ce088f99235063fb
     curl_easy_setopt(curl, CURLOPT_URL,
-        "https://api.openweathermap.org/data/2.5/weather?lat=2.094&lon=102.65&appid=f88e5e3d6507f132ce088f99235063fb");
+        "https://api.worldbank.org/v2/country/MYS?format=json");
 
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
@@ -72,9 +72,9 @@ int main() {
     std::cout << " Humidity: " << humidity << "%\n";
     std::cout << desc << "\n";
 
-} catch (json::exception& e) {
-    std::cerr << "JSON parsing error: " << e.what() << std::endl;
-}
+    } catch (json::exception& e) {
+        std::cerr << "JSON parsing error: " << e.what() << std::endl;
+    }
 
     system("pause");
     return 0;
