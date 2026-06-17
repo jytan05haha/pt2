@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cctype>
 #include <map>
+#include <iomanip>
 
 using json = nlohmann::json;
 
@@ -66,6 +67,27 @@ std::string toLower(std::string str){
     });
 
     return str;
+}
+
+std::string urlEncode(const std::string& value){
+    CURL* curl = curl_easy_init();
+
+    if (!curl)
+    {
+        return value;
+    }
+
+    char* encoded = curl_easy_escape(curl, value.c_str(), static_cast<int>(value.length()));
+    std::string result = encoded ? encoded : value;
+
+    if (encoded)
+    {
+        curl_free(encoded);
+    }
+
+    curl_easy_cleanup(curl);
+
+    return result;
 }
 
 class InformationSystem;
@@ -473,6 +495,170 @@ class SocialInformation : public Data{
         }
 };
 
+class EconomicInformation : public Data{
+    private:
+        std::string APIKey;
+        static const int START_YEAR = 2018;
+        static const int END_YEAR = 2024;
+        static const int TARGET_YEAR = 2024;
+
+        std::map<int, double> gdpCurrentUsd;
+        std::map<int, double> gdpPerCapitaCurrentUsd;
+        std::map<int, double> gdpAnnualGrowthRate;
+
+        double exportsOfGoodsAndServicesPercentGDP = 0.0;
+        double importsOfGoodsAndServicesPercentGDP = 0.0;
+        double inflationConsumerPricesAnnualPercent = 0.0;
+        double centralGovernmentExternalDebtCurrentUsd = 0.0;
+
+        bool hasExportsOfGoodsAndServicesPercentGDP = false;
+        bool hasImportsOfGoodsAndServicesPercentGDP = false;
+        bool hasInflationConsumerPricesAnnualPercent = false;
+        bool hasCentralGovernmentExternalDebtCurrentUsd = false;
+
+        void showYearlyData(const std::string& title, const std::map<int, double>& values){
+            std::cout << title << " (2018-2024):" << std::endl;
+
+            for (int year = END_YEAR; year >= START_YEAR; year--)
+            {
+                std::cout << year << ": ";
+
+                auto item = values.find(year);
+                if (item == values.end())
+                {
+                    std::cout << "N/A";
+                }
+                else
+                {
+                    std::cout << item->second;
+                }
+
+                std::cout << std::endl;
+            }
+        }
+
+        void showTargetYearData(const std::string& title, double value, bool hasValue){
+            std::cout << title << ", 2024: ";
+
+            if (hasValue)
+            {
+                std::cout << value;
+            }
+            else
+            {
+                std::cout << "N/A";
+            }
+
+            std::cout << std::endl;
+        }
+
+        friend class InformationSystem;
+
+    public:
+        std::string setAPIkey(std::string lan, std::string lon, std::string name) override{
+            std::string api="https://api.worldbank.org/v2/country/MYS/indicator/"
+                            "NY.GDP.MKTP.CD;"
+                            "NY.GDP.PCAP.CD;"
+                            "NY.GDP.MKTP.KD.ZG;"
+                            "NE.EXP.GNFS.ZS;"
+                            "NE.IMP.GNFS.ZS;"
+                            "FP.CPI.TOTL.ZG;"
+                            "DT.DOD.DECT.CD"
+                            "?format=json&date=2018:2024&per_page=1000&source=2";
+            APIKey=api;
+            return APIKey;
+        }
+
+        void JSON_Data_Parsing(std::string response) override{
+            try {
+                json data = json::parse(response);
+
+                if (!data.is_array() || data.size() < 2 || !data[1].is_array())
+                {
+                    std::cerr << "No economic data found." << std::endl;
+                    return;
+                }
+
+                gdpCurrentUsd.clear();
+                gdpPerCapitaCurrentUsd.clear();
+                gdpAnnualGrowthRate.clear();
+
+                hasExportsOfGoodsAndServicesPercentGDP = false;
+                hasImportsOfGoodsAndServicesPercentGDP = false;
+                hasInflationConsumerPricesAnnualPercent = false;
+                hasCentralGovernmentExternalDebtCurrentUsd = false;
+
+                for (const auto& item : data[1])
+                {
+                    if (!item.contains("indicator") || !item["indicator"].contains("id") ||
+                        item["indicator"]["id"].is_null() || item["date"].is_null() ||
+                        item["value"].is_null())
+                    {
+                        continue;
+                    }
+
+                    std::string indicatorCode = item["indicator"]["id"].get<std::string>();
+                    int year = std::stoi(item["date"].get<std::string>());
+                    double value = item["value"].get<double>();
+
+                    if (indicatorCode == "NY.GDP.MKTP.CD" && year >= START_YEAR && year <= END_YEAR)
+                    {
+                        gdpCurrentUsd[year] = value;
+                    }
+                    else if (indicatorCode == "NY.GDP.PCAP.CD" && year >= START_YEAR && year <= END_YEAR)
+                    {
+                        gdpPerCapitaCurrentUsd[year] = value;
+                    }
+                    else if (indicatorCode == "NY.GDP.MKTP.KD.ZG" && year >= START_YEAR && year <= END_YEAR)
+                    {
+                        gdpAnnualGrowthRate[year] = value;
+                    }
+                    else if (year == TARGET_YEAR)
+                    {
+                        if (indicatorCode == "NE.EXP.GNFS.ZS")
+                        {
+                            exportsOfGoodsAndServicesPercentGDP = value;
+                            hasExportsOfGoodsAndServicesPercentGDP = true;
+                        }
+                        else if (indicatorCode == "NE.IMP.GNFS.ZS")
+                        {
+                            importsOfGoodsAndServicesPercentGDP = value;
+                            hasImportsOfGoodsAndServicesPercentGDP = true;
+                        }
+                        else if (indicatorCode == "FP.CPI.TOTL.ZG")
+                        {
+                            inflationConsumerPricesAnnualPercent = value;
+                            hasInflationConsumerPricesAnnualPercent = true;
+                        }
+                        else if (indicatorCode == "DT.DOD.DECT.CD")
+                        {
+                            centralGovernmentExternalDebtCurrentUsd = value;
+                            hasCentralGovernmentExternalDebtCurrentUsd = true;
+                        }
+                    }
+                }
+            } catch (json::exception& e) {
+                std::cerr << "JSON parsing error: " << e.what() << std::endl;
+            } catch (std::exception& e) {
+                std::cerr << "Economic data parsing error: " << e.what() << std::endl;
+            }
+        }
+
+        void showData() override{
+            std::cout << std::fixed << std::setprecision(2);
+            std::cout << "Economic Information" << std::endl;
+            showYearlyData("GDP (current US$)", gdpCurrentUsd);
+            showYearlyData("GDP per capita (current US$)", gdpPerCapitaCurrentUsd);
+            showYearlyData("GDP annual growth rate (%)", gdpAnnualGrowthRate);
+
+            showTargetYearData("Exports of goods and services (% of GDP)", exportsOfGoodsAndServicesPercentGDP, hasExportsOfGoodsAndServicesPercentGDP);
+            showTargetYearData("Imports of goods and services (% of GDP)", importsOfGoodsAndServicesPercentGDP, hasImportsOfGoodsAndServicesPercentGDP);
+            showTargetYearData("Inflation, consumer prices (annual %)", inflationConsumerPricesAnnualPercent, hasInflationConsumerPricesAnnualPercent);
+            showTargetYearData("Central government external debt, total (current US$)", centralGovernmentExternalDebtCurrentUsd, hasCentralGovernmentExternalDebtCurrentUsd);
+            std::cout << std::defaultfloat;
+        }
+};
+
 class EnvironmentInformation : public Data{
     private:
         
@@ -551,17 +737,18 @@ class EnvironmentInformation : public Data{
 class HistoryInformation : public Data{
     private:
         std::string APIKey,
-                    title[3],
-                    source[3],
-                    description[3],
-                    published[3],
-                    url[3];
+                    title,
+                    description,
+                    extract,
+                    pageUrl,
+                    thumbnailUrl,
+                    lastModified;
 
         friend class InformationSystem;
 
     public:
         std::string setAPIkey(std::string lan, std::string lon, std::string name) override{
-            std::string api="https://newsapi.org/v2/everything?q="+name+"&language=en&sortBy=publishedAt&pageSize=5&apiKey=21045aad20f3482c810a0e9e212f7ab3";
+            std::string api="https://en.wikipedia.org/api/rest_v1/page/summary/"+urlEncode(name);
             
             APIKey=api;
             return APIKey;
@@ -569,22 +756,30 @@ class HistoryInformation : public Data{
 
 
         void JSON_Data_Parsing(std::string response) override{
-            // Parse JSON
             try {
-            json data = json::parse(response);
+                json data = json::parse(response);
 
-            // Check API status
-            if (data.contains("cod") && data["cod"] != 200) {
-                std::cerr << "API Error: " << data["message"] << std::endl;
-                exit(1);
+                if (data.contains("type") && getStringSafe(data, "type", "").find("not_found") != std::string::npos)
+                {
+                    std::cerr << "Wikipedia page not found." << std::endl;
+                    return;
                 }
-            
-                for(int i=0; i<3; i++){
-                    title[i]= data["articles"][i]["title"];
-                    source[i]=data["articles"][i]["source"]["name"];
-                    description[i]=data["articles"][i]["description"];
-                    published[i]=data["articles"][i]["publishedAt"];
-                    url[i]=data["articles"][i]["url"];
+
+                title = getStringSafe(data, "title");
+                description = getStringSafe(data, "description");
+                extract = getStringSafe(data, "extract");
+                lastModified = getStringSafe(data, "timestamp");
+                pageUrl = "N/A";
+                thumbnailUrl = "N/A";
+
+                if (data.contains("content_urls") && data["content_urls"].contains("desktop"))
+                {
+                    pageUrl = getStringSafe(data["content_urls"]["desktop"], "page");
+                }
+
+                if (data.contains("thumbnail") && data["thumbnail"].is_object())
+                {
+                    thumbnailUrl = getStringSafe(data["thumbnail"], "source");
                 }
 
             } catch (json::exception& e) {
@@ -593,7 +788,13 @@ class HistoryInformation : public Data{
         }
 
         void showData() override{
-            
+            std::cout << "History Information" << std::endl;
+            std::cout << "Title: " << title << std::endl;
+            std::cout << "Description: " << description << std::endl;
+            std::cout << "Summary: " << extract << std::endl;
+            std::cout << "Last modified: " << lastModified << std::endl;
+            std::cout << "Wikipedia URL: " << pageUrl << std::endl;
+            std::cout << "Thumbnail URL: " << thumbnailUrl << std::endl;
         }
 };
 
@@ -605,12 +806,13 @@ class NewsInformation : public Data{
                     description[3],
                     published[3],
                     url[3];
+        int articleCount = 0;
 
         friend class InformationSystem;
 
     public:
         std::string setAPIkey(std::string lan, std::string lon, std::string name) override{
-            std::string api="https://newsapi.org/v2/everything?q="+name+"&language=en&sortBy=publishedAt&pageSize=3&apiKey=21045aad20f3482c810a0e9e212f7ab3";
+            std::string api="https://newsapi.org/v2/everything?q="+urlEncode(name)+"&language=en&sortBy=publishedAt&pageSize=3&apiKey=21045aad20f3482c810a0e9e212f7ab3";
             
             APIKey=api;
             return APIKey;
@@ -618,22 +820,46 @@ class NewsInformation : public Data{
 
 
         void JSON_Data_Parsing(std::string response) override{
-            // Parse JSON
             try {
-            json data = json::parse(response);
+                json data = json::parse(response);
 
-            // Check API status
-            if (data.contains("cod") && data["cod"] != 200) {
-                std::cerr << "API Error: " << data["message"] << std::endl;
-                exit(1);
+                articleCount = 0;
+
+                for (int i = 0; i < 3; i++)
+                {
+                    title[i] = "N/A";
+                    source[i] = "N/A";
+                    description[i] = "N/A";
+                    published[i] = "N/A";
+                    url[i] = "N/A";
                 }
-            
-                for(int i=0; i<3; i++){
-                    title[i]= data["articles"][i]["title"];
-                    source[i]=data["articles"][i]["source"]["name"];
-                    description[i]=data["articles"][i]["description"];
-                    published[i]=data["articles"][i]["publishedAt"];
-                    url[i]=data["articles"][i]["url"];
+
+                if (getStringSafe(data, "status", "") == "error")
+                {
+                    std::cerr << "News API Error: " << getStringSafe(data, "message") << std::endl;
+                    return;
+                }
+
+                if (!data.contains("articles") || !data["articles"].is_array())
+                {
+                    std::cerr << "No news data found." << std::endl;
+                    return;
+                }
+
+                articleCount = std::min(3, static_cast<int>(data["articles"].size()));
+
+                for(int i=0; i<articleCount; i++){
+                    const json& article = data["articles"][i];
+
+                    title[i]= getStringSafe(article, "title");
+                    description[i]= getStringSafe(article, "description");
+                    published[i]= getStringSafe(article, "publishedAt");
+                    url[i]= getStringSafe(article, "url");
+
+                    if (article.contains("source") && article["source"].is_object())
+                    {
+                        source[i]=getStringSafe(article["source"], "name");
+                    }
                 }
 
             } catch (json::exception& e) {
@@ -642,12 +868,21 @@ class NewsInformation : public Data{
         }
 
         void showData() override{
-            for(int i=0; i<3; i++){
-                    std::cout<<title[i]<<std::endl;
-                    std::cout<<source[i]<<std::endl;
-                    std::cout<<description[i]<<std::endl;
-                    std::cout<<published[i]<<std::endl;
-                    std::cout<<url[i]<<std::endl;
+            std::cout << "News Information" << std::endl;
+
+            if (articleCount == 0)
+            {
+                std::cout << "No news articles found." << std::endl;
+                return;
+            }
+
+            for(int i=0; i<articleCount; i++){
+                    std::cout<<"Article "<<i + 1<<std::endl;
+                    std::cout<<"Title: "<<title[i]<<std::endl;
+                    std::cout<<"Source: "<<source[i]<<std::endl;
+                    std::cout<<"Description: "<<description[i]<<std::endl;
+                    std::cout<<"Published at: "<<published[i]<<std::endl;
+                    std::cout<<"URL: "<<url[i]<<std::endl;
             }
         }
 };
@@ -663,6 +898,7 @@ class InformationSystem {
         Data *news = new NewsInformation();
         Data *history= new HistoryInformation();
         Data *social = new SocialInformation();
+        Data *economic = new EconomicInformation();
 
     public:
         void setLatitude(double lat){
@@ -707,12 +943,25 @@ class InformationSystem {
             social->showData();
         }
 
+        void showEconomicInformation(){
+            std::string API= economic->setAPIkey(std::to_string(latitude), std::to_string(longitude),countryName);
+            std::string response=economic->HTTP_Request(API);
+            economic-> JSON_Data_Parsing(response);
+            economic->showData();
+        }
+
         void showNewsInformation(){
             std::string API= news->setAPIkey(std::to_string(latitude), std::to_string(longitude),countryName);
             std::string response=news->HTTP_Request(API);
-            std::cout<<response<<std::endl;
             news-> JSON_Data_Parsing(response);
             news->showData();
+        }
+
+        void showHistoryInformation(){
+            std::string API= history->setAPIkey(std::to_string(latitude), std::to_string(longitude),countryName);
+            std::string response=history->HTTP_Request(API);
+            history-> JSON_Data_Parsing(response);
+            history->showData();
         }
 
         void showBasicInformation(){
@@ -742,7 +991,8 @@ int main() {
     information.setLongitude(longi);
     information.setCountryName(name);
 
-    information.showBasicInformation();
+    information.showNewsInformation();
+    information.showHistoryInformation();
 
     return 0;
 }
