@@ -40,7 +40,6 @@ class Data{
                 std::cerr << "Failed to initialize curl" << std::endl;
                 exit(1);
             }
-            //https://api.openweathermap.org/data/2.5/weather?lat=2.094&lon=102.65&appid=f88e5e3d6507f132ce088f99235063fb
             curl_easy_setopt(curl, CURLOPT_URL,
                 api);
 
