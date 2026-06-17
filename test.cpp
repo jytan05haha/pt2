@@ -5,6 +5,7 @@
 #include <vector>
 #include <algorithm>
 #include <cctype>
+#include <map>
 
 using json = nlohmann::json;
 
@@ -140,17 +141,53 @@ class Data{
 class BasicInformation : public Data{
     private:
         std::string APIKey,
+                    requestedCountryName,
                     countryName;
         std::vector<std::string> languages;
         std::vector<Currency> currencies;
-        double area;
+        double area = 0.0;
+
+        bool isRequestedCountry(const json& country){
+            std::string requestedName = toLower(requestedCountryName);
+
+            if (country.contains("name") && country["name"].is_object())
+            {
+                std::string commonName = toLower(getStringSafe(country["name"], "common", ""));
+                std::string officialName = toLower(getStringSafe(country["name"], "official", ""));
+
+                if (requestedName == commonName || requestedName == officialName)
+                {
+                    return true;
+                }
+            }
+
+            if (requestedName == toLower(getStringSafe(country, "cca2", "")) ||
+                requestedName == toLower(getStringSafe(country, "cca3", "")) ||
+                requestedName == toLower(getStringSafe(country, "cioc", "")))
+            {
+                return true;
+            }
+
+            if (country.contains("altSpellings") && country["altSpellings"].is_array())
+            {
+                for (const auto& spelling : country["altSpellings"])
+                {
+                    if (spelling.is_string() && requestedName == toLower(spelling.get<std::string>()))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
 
         friend class InformationSystem;
 
     public:
         std::string setAPIkey(std::string lan, std::string lon, std::string name) override{
-            std::string api="https://restcountries.com/v3.1/name/" + name +
-             "?fields=name,area,languages,currencies";
+            requestedCountryName = name;
+            std::string api="https://raw.githubusercontent.com/mledoze/countries/master/countries.json";
             APIKey=api;
             return APIKey;
         }
@@ -158,13 +195,6 @@ class BasicInformation : public Data{
         void JSON_Data_Parsing(std::string response) override{
             try
             {
-                if (!response.empty() && response[0] == '<')
-                {
-                    std::cerr << "Error: API returned HTML instead of JSON.\n";
-                    std::cerr << "Your API URL may be wrong or redirected.\n";
-                    return;
-                }
-
                 json data = json::parse(response);
 
                 if (!data.is_array() || data.empty())
@@ -173,8 +203,26 @@ class BasicInformation : public Data{
                     return;
                 }
 
-                json country = data[0];
+                const json* matchedCountry = nullptr;
 
+                for (const auto& country : data)
+                {
+                    if (isRequestedCountry(country))
+                    {
+                        matchedCountry = &country;
+                        break;
+                    }
+                }
+
+                if (matchedCountry == nullptr)
+                {
+                    std::cout << "No country data found for " << requestedCountryName << ".\n";
+                    return;
+                }
+
+                const json& country = *matchedCountry;
+
+                countryName = getStringSafe(country["name"], "common", requestedCountryName);
                 area = getDoubleSafe(country, "area");
 
                 languages.clear();
@@ -212,8 +260,9 @@ class BasicInformation : public Data{
         }
 
         void showData() override{
-            std::cout<<countryName<<std::endl;
-            std::cout<<area<<std::endl;
+            std::cout<<"Basic Information"<<std::endl;
+            std::cout<<"Country: "<<countryName<<std::endl;
+            std::cout<<"Area: "<<area<<" km^2"<<std::endl;
             std::cout << "Languages: ";
 
             if (languages.empty()){
@@ -259,36 +308,168 @@ class BasicInformation : public Data{
 class SocialInformation : public Data{
     private:
         std::string APIKey;
+        static const int START_YEAR = 2018;
+        static const int END_YEAR = 2024;
+        static const int TARGET_YEAR = 2024;
+
+        std::map<int, long long> totalPopulation;
+        std::map<int, long long> childYouthPopulation;
+        std::map<int, long long> workingAgePopulation;
+        std::map<int, long long> elderlyPopulation;
+
+        double childYouthPercentage = 0.0;
+        double workingAgePercentage = 0.0;
+        double elderlyPercentage = 0.0;
+        double birthRate = 0.0;
+        double deathRate = 0.0;
+        double lifeExpectancyAtBirth = 0.0;
+        double secondaryEducationEnrollmentRate = 0.0;
+        double tertiaryEducationEnrollmentRate = 0.0;
 
         friend class InformationSystem;
 
     public:
         std::string setAPIkey(std::string lan, std::string lon, std::string name) override{
-            std::string api="https://api.worldbank.org/v2/country/MYS/indicator/SP.POP.TOTL?format=json&date=2018:2024&per_page=1000&source=2";
+            std::string api="https://api.worldbank.org/v2/country/MYS/indicator/"
+                            "SP.POP.TOTL;"
+                            "SP.POP.0014.TO;"
+                            "SP.POP.1564.TO;"
+                            "SP.POP.65UP.TO;"
+                            "SP.POP.0014.TO.ZS;"
+                            "SP.POP.1564.TO.ZS;"
+                            "SP.POP.65UP.TO.ZS;"
+                            "SP.DYN.CBRT.IN;"
+                            "SP.DYN.CDRT.IN;"
+                            "SP.DYN.LE00.IN;"
+                            "SE.SEC.ENRL.TC.ZS;"
+                            "SE.TER.ENRL.TC.ZS"
+                            "?format=json&date=2018:2024&per_page=1000&source=2";
             APIKey=api;
             return APIKey;
 
         }
 
         void JSON_Data_Parsing(std::string response) override{
-            // Parse JSON
             try {
-            json data = json::parse(response);
+                json data = json::parse(response);
 
-            // Check API status
-            if (data.contains("cod") && data["cod"] != 200) {
-                std::cerr << "API Error: " << data["message"] << std::endl;
-                exit(1);
-            }
+                if (!data.is_array() || data.size() < 2 || !data[1].is_array())
+                {
+                    std::cerr << "No social data found." << std::endl;
+                    return;
+                }
 
-            std::cout<<response<<std::endl;
+                totalPopulation.clear();
+                childYouthPopulation.clear();
+                workingAgePopulation.clear();
+                elderlyPopulation.clear();
+
+                for (const auto& item : data[1])
+                {
+                    if (!item.contains("indicator") || !item["indicator"].contains("id") ||
+                        item["indicator"]["id"].is_null() || item["date"].is_null() ||
+                        item["value"].is_null())
+                    {
+                        continue;
+                    }
+
+                    std::string indicatorCode = item["indicator"]["id"].get<std::string>();
+                    int year = std::stoi(item["date"].get<std::string>());
+                    double value = item["value"].get<double>();
+
+                    if (indicatorCode == "SP.POP.TOTL" && year >= START_YEAR && year <= END_YEAR)
+                    {
+                        totalPopulation[year] = static_cast<long long>(value);
+                    }
+                    else if (indicatorCode == "SP.POP.0014.TO" && year >= START_YEAR && year <= END_YEAR)
+                    {
+                        childYouthPopulation[year] = static_cast<long long>(value);
+                    }
+                    else if (indicatorCode == "SP.POP.1564.TO" && year >= START_YEAR && year <= END_YEAR)
+                    {
+                        workingAgePopulation[year] = static_cast<long long>(value);
+                    }
+                    else if (indicatorCode == "SP.POP.65UP.TO" && year >= START_YEAR && year <= END_YEAR)
+                    {
+                        elderlyPopulation[year] = static_cast<long long>(value);
+                    }
+                    else if (year == TARGET_YEAR)
+                    {
+                        if (indicatorCode == "SP.POP.0014.TO.ZS")
+                        {
+                            childYouthPercentage = value;
+                        }
+                        else if (indicatorCode == "SP.POP.1564.TO.ZS")
+                        {
+                            workingAgePercentage = value;
+                        }
+                        else if (indicatorCode == "SP.POP.65UP.TO.ZS")
+                        {
+                            elderlyPercentage = value;
+                        }
+                        else if (indicatorCode == "SP.DYN.CBRT.IN")
+                        {
+                            birthRate = value;
+                        }
+                        else if (indicatorCode == "SP.DYN.CDRT.IN")
+                        {
+                            deathRate = value;
+                        }
+                        else if (indicatorCode == "SP.DYN.LE00.IN")
+                        {
+                            lifeExpectancyAtBirth = value;
+                        }
+                        else if (indicatorCode == "SE.SEC.ENRL.TC.ZS")
+                        {
+                            secondaryEducationEnrollmentRate = value;
+                        }
+                        else if (indicatorCode == "SE.TER.ENRL.TC.ZS")
+                        {
+                            tertiaryEducationEnrollmentRate = value;
+                        }
+                    }
+                }
             } catch (json::exception& e) {
                 std::cerr << "JSON parsing error: " << e.what() << std::endl;
+            } catch (std::exception& e) {
+                std::cerr << "Social data parsing error: " << e.what() << std::endl;
             }
         }
 
         void showData() override{
-            
+            std::cout << "Social Information" << std::endl;
+            std::cout << "Total population (2018-2024):" << std::endl;
+            for (int year = END_YEAR; year >= START_YEAR; year--)
+            {
+                std::cout << year << ": " << totalPopulation[year] << std::endl;
+            }
+
+            std::cout << "Children/youth population, ages 0-14 (2018-2024):" << std::endl;
+            for (int year = END_YEAR; year >= START_YEAR; year--)
+            {
+                std::cout << year << ": " << childYouthPopulation[year] << std::endl;
+            }
+
+            std::cout << "Working-age population, ages 15-64 (2018-2024):" << std::endl;
+            for (int year = END_YEAR; year >= START_YEAR; year--)
+            {
+                std::cout << year << ": " << workingAgePopulation[year] << std::endl;
+            }
+
+            std::cout << "Elderly population, ages 65 and above (2018-2024):" << std::endl;
+            for (int year = END_YEAR; year >= START_YEAR; year--)
+            {
+                std::cout << year << ": " << elderlyPopulation[year] << std::endl;
+            }
+
+            std::cout << "Children/youth share of population (%), 2024: " << childYouthPercentage << std::endl;
+            std::cout << "Working-age share of population (%), 2024: " << workingAgePercentage << std::endl;
+            std::cout << "Elderly share of population (%), 2024: " << elderlyPercentage << std::endl;
+            std::cout << "Birth rate (per 1,000 people), 2024: " << birthRate << std::endl;
+            std::cout << "Death rate (per 1,000 people), 2024: " << deathRate << std::endl;
+            std::cout << "Life expectancy at birth, total, 2024: " << lifeExpectancyAtBirth << std::endl;
+            std::cout << "Secondary education enrollment rate (%), 2024: " << secondaryEducationEnrollmentRate << std::endl;
+            std::cout << "Tertiary education enrollment rate (%), 2024: " << tertiaryEducationEnrollmentRate << std::endl;
         }
 };
 
@@ -522,8 +703,8 @@ class InformationSystem {
         void showSocialInformation(){
             std::string API= social->setAPIkey(std::to_string(latitude), std::to_string(longitude),countryName);
             std::string response=social->HTTP_Request(API);
-            std::cout<<response<<std::endl;
             social-> JSON_Data_Parsing(response);
+            social->showData();
         }
 
         void showNewsInformation(){
@@ -537,7 +718,6 @@ class InformationSystem {
         void showBasicInformation(){
             std::string API= basic->setAPIkey(std::to_string(latitude), std::to_string(longitude),countryName);
             std::string response=basic->HTTP_Request(API);
-            std::cout<<response<<std::endl;
             basic-> JSON_Data_Parsing(response);
             basic->showData();
         }
@@ -555,7 +735,8 @@ int main() {
     std::cout<<"Please enter the longitude for your location => ";
     std::cin>>longi;
     std::cout<<"Country name => ";
-    std::cin>>name;
+    std::cin >> std::ws;
+    std::getline(std::cin, name);
 
     information.setLatitude(lat);
     information.setLongitude(longi);
