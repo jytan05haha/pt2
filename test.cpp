@@ -116,7 +116,7 @@ class BasicInformation : public Data{
         }
 };
 
-class SocialAndEconomicInformation : public Data{
+class SocialInformation : public Data{
     private:
         std::string APIKey;
 
@@ -124,9 +124,10 @@ class SocialAndEconomicInformation : public Data{
 
     public:
         std::string setAPIkey(std::string lan, std::string lon, std::string name) override{
-            std::string api="https://api.openweathermap.org/data/2.5/weather?lat="+lan+"&lon="+lon+"&appid=f88e5e3d6507f132ce088f99235063fb";
+            std::string api="https://api.worldbank.org/v2/country/MYS/indicator/SP.POP.TOTL?format=json&date=2018:2026";
             APIKey=api;
             return APIKey;
+
         }
 
         void JSON_Data_Parsing(std::string response) override{
@@ -138,7 +139,9 @@ class SocialAndEconomicInformation : public Data{
             if (data.contains("cod") && data["cod"] != 200) {
                 std::cerr << "API Error: " << data["message"] << std::endl;
                 exit(1);
-                }
+            }
+
+            std::cout<<response<<std::endl;
             } catch (json::exception& e) {
                 std::cerr << "JSON parsing error: " << e.what() << std::endl;
             }
@@ -239,7 +242,7 @@ class InformationSystem {
         Data *environment = new EnvironmentInformation();
         Data *basic = new BasicInformation();
         Data *news = new NewsAndHistoryInformation();
-        Data *social = new SocialAndEconomicInformation();
+        Data *social = new SocialInformation();
 
     public:
         void setLatitude(double lat){
@@ -277,6 +280,13 @@ class InformationSystem {
             std::string response=environment->HTTP_Request(API);
             environment->JSON_Data_Parsing(response);
             environment->showData();
+        }
+
+        void showSocialInformation(){
+            std::string API= social->setAPIkey(std::to_string(latitude), std::to_string(longitude),countryName);
+            std::string response=social->HTTP_Request(API);
+            std::cout<<response<<std::endl;
+            social-> JSON_Data_Parsing(response);
         }
 };
 
